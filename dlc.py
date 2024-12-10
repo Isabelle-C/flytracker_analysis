@@ -208,60 +208,6 @@ def load_trk_df(fpath, flyid='fly', fps=60, max_jump=6,
 # measurement
 # ---------------------------------------------------------------------
 
-def get_bodypart_distance(dataframe, partname1, partname2):
-    # retrieves the pixel distance between two bodyparts (from Tom)
-
-    bpt1 = dataframe.xs(partname1, level='bodyparts', axis=1).to_numpy()
-    bpt2 = dataframe.xs(partname2, level='bodyparts', axis=1).to_numpy()
-
-    bptDistance = np.sqrt(np.sum(np.square(bpt1[:, [0, 1]] - bpt2[:, [0, 1]]), axis=1))
-    return bptDistance
-
-
-def get_animal_centroid(dataframe):
-    # From Tom/Rufei
-    scorer = dataframe.columns.get_level_values(0).unique()[0]
-    bptNames = dataframe.columns.get_level_values(1).unique()
-    nFrames = len(dataframe)
-    aniXpos, aniYpos = np.zeros((nFrames, len(bptNames[0:8]))), np.zeros((nFrames, len(bptNames[0:8])))
-
-    for i, nm in enumerate(bptNames[0:8]):
-        aniXpos[:, i] = dataframe[scorer][nm]['x']
-        aniYpos[:, i] = dataframe[scorer][nm]['y']
-
-    xCenter, yCenter = np.nanmean(aniXpos, axis=1), np.nanmean(aniYpos, axis=1)
-    centroid = np.column_stack((xCenter, yCenter))
-
-    return centroid
-
-
-def get_bodypart_angle(dataframe, partName1, partName2):
-    # retrieves the angle between two bodyparts (Tom/Rufei)
-
-    bpt1 = dataframe.xs(partName1, level='bodyparts', axis=1).to_numpy()
-    bpt2 = dataframe.xs(partName2, level='bodyparts', axis=1).to_numpy()
-
-    angle = np.arctan2(bpt2[:, 1] - bpt1[:, 1], bpt2[:, 0] - bpt1[:, 0])
-    return angle
-
-
-def circular_distance(ang1, ang2):
-    # efficiently computes the circular distance between two angles (Tom/Rufei)
-
-    circdist = np.angle(np.exp(1j * ang1) / np.exp(1j * ang2))
-
-    return circdist
-
-
-def wrap2pi(ang):
-    # wraps a set of values to fit between zero and 2Pi (Tom/Rufei)
-
-    positiveValues = (ang > 0)
-    wrappedAng = ang % (2 * np.pi)
-    wrappedAng[ang == 0 & positiveValues] = 2 * np.pi
-
-    return wrappedAng
-
 
 def get_relative_orientations(ani1, ani2, ori_var='heading', xvar='centroid_x', yvar='centroid_y'):
 

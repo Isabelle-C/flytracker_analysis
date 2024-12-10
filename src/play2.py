@@ -63,12 +63,13 @@ def get_metrics_relative_to_focal_fly(
 
     return df_
 
-def get_target_sizes_df(fly1, fly2, xvar='pos_x', yvar='pos_y'):
-    '''
-    For provided df of tracks (FlyTracker), calculates the size of target in deg. 
+
+def get_target_sizes_df(fly1, fly2, xvar="pos_x", yvar="pos_y"):
+    """
+    For provided df of tracks (FlyTracker), calculates the size of target in deg.
 
     Arguments:
-        fly1 -- df of tracks.mat for fly1 (male or focal fly) 
+        fly1 -- df of tracks.mat for fly1 (male or focal fly)
         fly2 -- df of tracks.mat for fly2 (female or target fly)
 
     Keyword Arguments:
@@ -77,40 +78,43 @@ def get_target_sizes_df(fly1, fly2, xvar='pos_x', yvar='pos_y'):
 
     Returns:
         fly2 -- returns fly2 with new column 'size_deg'
-    '''
+    """
     fem_sizes = []
     for ix in fly1.index.tolist():
-        xi = fly2.loc[ix][xvar] - fly1.loc[ix][xvar] 
+        xi = fly2.loc[ix][xvar] - fly1.loc[ix][xvar]
         yi = fly2.loc[ix][yvar] - fly1.loc[ix][yvar]
-        f_ori = fly2.loc[ix]['ori']
-        f_len_maj = fly2.loc[ix]['major_axis_len']
-        f_len_min = fly2.loc[ix]['minor_axis_len']
+        f_ori = fly2.loc[ix]["ori"]
+        f_len_maj = fly2.loc[ix]["major_axis_len"]
+        f_len_min = fly2.loc[ix]["minor_axis_len"]
         # take into account major/minor axes of ellipse
         fem_sz_deg_maj = util.calculate_female_size_deg(xi, yi, f_ori, f_len_maj)
         fem_sz_deg_min = util.calculate_female_size_deg(xi, yi, f_ori, f_len_min)
         fem_sz_deg = np.max([fem_sz_deg_maj, fem_sz_deg_min])
         fem_sizes.append(fem_sz_deg)
 
-    #fly2['targ_ang_size'] = fem_sizes
-    #fly2['targ_ang_size_deg'] = np.rad2deg(fly2['targ_ang_size'])
+    # fly2['targ_ang_size'] = fem_sizes
+    # fly2['targ_ang_size_deg'] = np.rad2deg(fly2['targ_ang_size'])
     # copy same info for f1
-    fly1['targ_ang_size'] = fem_sizes
-    fly1['targ_ang_size_deg'] = np.rad2deg(fly1['targ_ang_size'])
+    fly1["targ_ang_size"] = fem_sizes
+    fly1["targ_ang_size_deg"] = np.rad2deg(fly1["targ_ang_size"])
 
-    return fly1 #, fly2
+    return fly1  # , fly2
 
-def do_transformations_on_df(trk_, frame_width, frame_height, 
-                             feat_=None,
-                             cop_ix=None, flyid1=0, flyid2=1):
+
+def do_transformations_on_df(
+    trk_, frame_width, frame_height, feat_=None, cop_ix=None, flyid1=0, flyid2=1
+):
     if feat_ is None:
-        assert 'dist_to_other' in trk_.columns, "No feat df provided. Need dist_to_other."
+        assert (
+            "dist_to_other" in trk_.columns
+        ), "No feat df provided. Need dist_to_other."
 
     # center x- and y-coordinates
-    trk_ = util.center_coordinates(trk_, frame_width, frame_height) 
+    trk_ = util.center_coordinates(trk_, frame_width, frame_height)
 
     # separate fly1 and fly2
-    fly1 = trk_[trk_['id']==flyid1].copy().reset_index(drop=True)
-    fly2 = trk_[trk_['id']==flyid2].copy().reset_index(drop=True)
+    fly1 = trk_[trk_["id"] == flyid1].copy().reset_index(drop=True)
+    fly2 = trk_[trk_["id"] == flyid2].copy().reset_index(drop=True)
 
     # FIRST, do fly1: -------------------------------------------------
     # translate coordinates so that focal fly is at origin
@@ -123,11 +127,11 @@ def do_transformations_on_df(trk_, frame_width, frame_height,
 
     # add polar conversion
     # FLIP y-axis? TODO check this
-    polarcoords = cart2pol(fly2['rot_x'], fly2['rot_y']) 
-    fly1['targ_pos_radius'] = polarcoords[0]
-    fly1['targ_pos_theta'] = polarcoords[1]
-    fly1['targ_rel_pos_x'] = fly2['rot_x']
-    fly1['targ_rel_pos_y'] = fly2['rot_y']
+    polarcoords = cart2pol(fly2["rot_x"], fly2["rot_y"])
+    fly1["targ_pos_radius"] = polarcoords[0]
+    fly1["targ_pos_theta"] = polarcoords[1]
+    fly1["targ_rel_pos_x"] = fly2["rot_x"]
+    fly1["targ_rel_pos_y"] = fly2["rot_y"]
 
     # NOW, do fly2: ----------------------------------------------------
     # translate coordinates so that focal fly is at origin
@@ -140,13 +144,13 @@ def do_transformations_on_df(trk_, frame_width, frame_height,
 
     # add polar conversion
     # FLIP y-axis? TODO check this
-    polarcoords = util.cart2pol(fly1['rot_x'], fly1['rot_y']) 
-    fly2['targ_pos_radius'] = polarcoords[0]
-    fly2['targ_pos_theta'] = polarcoords[1]
-    fly2['targ_rel_pos_x'] = fly1['rot_x']
-    fly2['targ_rel_pos_y'] = fly1['rot_y']
+    polarcoords = util.cart2pol(fly1["rot_x"], fly1["rot_y"])
+    fly2["targ_pos_radius"] = polarcoords[0]
+    fly2["targ_pos_theta"] = polarcoords[1]
+    fly2["targ_rel_pos_x"] = fly1["rot_x"]
+    fly2["targ_rel_pos_y"] = fly1["rot_y"]
 
-    #% copulation index - TMP: fix this!
+    # % copulation index - TMP: fix this!
     if cop_ix is None or np.isnan(cop_ix):
         cop_ix = len(fly1)
         copulation = False
@@ -154,128 +158,158 @@ def do_transformations_on_df(trk_, frame_width, frame_height,
         copulation = True
     cop_ix = int(cop_ix)
 
-    #% Get all sizes and aggregate trk df
-    fly1 = get_target_sizes_df(fly1, fly2, xvar='pos_x', yvar='pos_y')
+    # % Get all sizes and aggregate trk df
+    fly1 = get_target_sizes_df(fly1, fly2, xvar="pos_x", yvar="pos_y")
     # Repeat for fly2:
-    fly2 = get_target_sizes_df(fly2, fly1, xvar='pos_x', yvar='pos_y')
+    fly2 = get_target_sizes_df(fly2, fly1, xvar="pos_x", yvar="pos_y")
 
     # recombine trk df
-    trk = pd.concat([fly1.iloc[:cop_ix], fly2.iloc[:cop_ix]], axis=0).reset_index(drop=True)#.sort_index()
-    trk['copulation'] = copulation
+    trk = pd.concat([fly1.iloc[:cop_ix], fly2.iloc[:cop_ix]], axis=0).reset_index(
+        drop=True
+    )  # .sort_index()
+    trk["copulation"] = copulation
 
     # Get relative velocity and aggregate feat df
     if feat_ is not None:
         f_list = []
-        for fi, df_ in feat_.groupby('id'):
-            df_ = get_relative_velocity(df_, win=1, 
-                                value_var='dist_to_other', time_var='sec')
+        for fi, df_ in feat_.groupby("id"):
+            df_ = get_relative_velocity(
+                df_, win=1, value_var="dist_to_other", time_var="sec"
+            )
             f_list.append(df_.reset_index(drop=True).iloc[:cop_ix])
-        feat = pd.concat(f_list, axis=0).reset_index(drop=True) #.sort_index()
-        feat['copulation'] = copulation
+        feat = pd.concat(f_list, axis=0).reset_index(drop=True)  # .sort_index()
+        feat["copulation"] = copulation
         print(trk.iloc[-1].name, feat.iloc[-1].name)
-        df = pd.concat([trk, 
-                feat.drop(columns=[c for c in feat.columns if c in trk.columns])], axis=1)
-        assert df.shape[0]==trk.shape[0], "Bad merge: {}, {}".format(feat.shape, trk.shape)
+        df = pd.concat(
+            [trk, feat.drop(columns=[c for c in feat.columns if c in trk.columns])],
+            axis=1,
+        )
+        assert df.shape[0] == trk.shape[0], "Bad merge: {}, {}".format(
+            feat.shape, trk.shape
+        )
     else:
         f_list = []
-        assert 'dist_to_other' in trk.columns, "No feat df provided. Need dist_to_other."
-        for fi, df_ in trk.groupby('id'):
-            df_ = get_relative_velocity(df_, win=1, 
-                                value_var='dist_to_other', time_var='sec')
+        assert (
+            "dist_to_other" in trk.columns
+        ), "No feat df provided. Need dist_to_other."
+        for fi, df_ in trk.groupby("id"):
+            df_ = get_relative_velocity(
+                df_, win=1, value_var="dist_to_other", time_var="sec"
+            )
             f_list.append(df_.reset_index(drop=True).iloc[:cop_ix])
-        df = pd.concat(f_list, axis=0).reset_index(drop=True) #.sort_index()
+        df = pd.concat(f_list, axis=0).reset_index(drop=True)  # .sort_index()
 
-    #acq = os.path.split(acqdir)[-1]
+    # acq = os.path.split(acqdir)[-1]
 
     return df
 
 
 def get_interfly_params(flydf, dotdf, cop_ix=None):
     if cop_ix is None:
-        cop_ix = len(flydf)   
+        cop_ix = len(flydf)
     # inter-fly stuff
     # get inter-fly distance based on centroid
-    fly_ctr = flydf[['centroid_x', 'centroid_y']].values 
-    dot_ctr = dotdf[['centroid_x', 'centroid_y']].values 
+    fly_ctr = flydf[["centroid_x", "centroid_y"]].values
+    dot_ctr = dotdf[["centroid_x", "centroid_y"]].values
 
-    IFD = np.sqrt(np.sum(np.square(dot_ctr - fly_ctr),axis=1))
-    flydf['dist_to_other'] = IFD[:cop_ix]
-    flydf['facing_angle'], flydf['ang_between'] = get_relative_orientations(
-                                                            flydf, dotdf,
-                                                            ori_var='ori')
-    dotdf['dist_to_other'] = IFD[:cop_ix]
-    dotdf['facing_angle'], dotdf['ang_between'] = get_relative_orientations(dotdf, flydf,
-                                                                            ori_var='ori')
+    IFD = np.sqrt(np.sum(np.square(dot_ctr - fly_ctr), axis=1))
+    flydf["dist_to_other"] = IFD[:cop_ix]
+    flydf["facing_angle"], flydf["ang_between"] = get_relative_orientations(
+        flydf, dotdf, ori_var="ori"
+    )
+    dotdf["dist_to_other"] = IFD[:cop_ix]
+    dotdf["facing_angle"], dotdf["ang_between"] = get_relative_orientations(
+        dotdf, flydf, ori_var="ori"
+    )
     return flydf, dotdf
 
 
-def load_trk_df(fpath, flyid='fly', fps=60, max_jump=6, 
-                cop_ix=None, filter_bad_frames=True, pcutoff=0.9):
-    
+def load_trk_df(
+    fpath,
+    flyid="fly",
+    fps=60,
+    max_jump=6,
+    cop_ix=None,
+    filter_bad_frames=True,
+    pcutoff=0.9,
+):
+
     trk = pd.read_hdf(fpath)
 
-
-    #bad_ixs = df[df[df.columns[df.columns.get_level_values(3)=='likelihood']] < 0.99].any(axis=1)
-    #bad_ixs = df[df[df[df.columns[df.columns.get_level_values(3)=='likelihood']] < 0.9].any(axis=1)].index.tolist()            
+    # bad_ixs = df[df[df.columns[df.columns.get_level_values(3)=='likelihood']] < 0.99].any(axis=1)
+    # bad_ixs = df[df[df[df.columns[df.columns.get_level_values(3)=='likelihood']] < 0.9].any(axis=1)].index.tolist()
 
     tstamp = np.linspace(0, len(trk) * 1 / fps, len(trk))
-    flypos = trk.xs(flyid, level='individuals', axis=1)
+    flypos = trk.xs(flyid, level="individuals", axis=1)
     flypos = remove_jumps(flypos, max_jump)
 
     if filter_bad_frames:
-        if flyid == 'fly':
-            bad_ixs = flypos[ flypos[ flypos[flypos.columns[flypos.columns.get_level_values(2)=='likelihood']] < pcutoff].any(axis=1)].index.tolist()
+        if flyid == "fly":
+            bad_ixs = flypos[
+                flypos[
+                    flypos[
+                        flypos.columns[
+                            flypos.columns.get_level_values(2) == "likelihood"
+                        ]
+                    ]
+                    < pcutoff
+                ].any(axis=1)
+            ].index.tolist()
         else:
             bad_ixs = []
         flypos.loc[bad_ixs, :] = np.nan
 
     if cop_ix is None:
         cop_ix = len(flypos)
-    if 'fly' in flyid:
+    if "fly" in flyid:
         flydf = get_fly_params(flypos, cop_ix=cop_ix)
     else:
         flydf = get_dot_params(flypos, cop_ix=cop_ix)
-    flydf['time'] = tstamp
-    
+    flydf["time"] = tstamp
+
     return flydf
+
 
 def add_speed_epochs(dotdf, flydf, acq, filter=True):
     dotdf = smooth_speed_steps(dotdf)
     # get epochs
-    if acq in '20240214-1045_f1_Dele-wt_5do_sh_prj10_sz12x12_2024-02-14-104540-0000':
+    if acq in "20240214-1045_f1_Dele-wt_5do_sh_prj10_sz12x12_2024-02-14-104540-0000":
         n_levels = 8
-    elif acq in '20240215-1722_fly1_Dmel_sP1-ChR_3do_sh_6x6_2024-02-15-172443-0000':
+    elif acq in "20240215-1722_fly1_Dmel_sP1-ChR_3do_sh_6x6_2024-02-15-172443-0000":
         n_levels = 9
     else:
         n_levels = 10
-    step_dict = get_step_indices(dotdf, speed_var='lin_speed_filt', 
-                                t_start=20, increment=40, n_levels=n_levels)
+    step_dict = get_step_indices(
+        dotdf, speed_var="lin_speed_filt", t_start=20, increment=40, n_levels=n_levels
+    )
 
     dotdf = add_speed_epoch(dotdf, step_dict)
     flydf = add_speed_epoch(flydf, step_dict)
-    dotdf['acquisition'] = acq
-    flydf['acquisition'] = acq
+    dotdf["acquisition"] = acq
+    flydf["acquisition"] = acq
     if filter:
-        return dotdf[dotdf['epoch'] < 10], flydf[flydf['epoch'] < 10]
+        return dotdf[dotdf["epoch"] < 10], flydf[flydf["epoch"] < 10]
     else:
         return dotdf, flydf
 
+
 def get_interfly_params(flydf, dotdf, cop_ix=None):
     if cop_ix is None:
-        cop_ix = len(flydf)   
+        cop_ix = len(flydf)
     # inter-fly stuff
     # get inter-fly distance based on centroid
-    fly_ctr = flydf[['centroid_x', 'centroid_y']].values 
-    dot_ctr = dotdf[['centroid_x', 'centroid_y']].values 
+    fly_ctr = flydf[["centroid_x", "centroid_y"]].values
+    dot_ctr = dotdf[["centroid_x", "centroid_y"]].values
 
-    IFD = np.sqrt(np.sum(np.square(dot_ctr - fly_ctr),axis=1))
-    flydf['dist_to_other'] = IFD[:cop_ix]
-    flydf['facing_angle'], flydf['ang_between'] = get_relative_orientations(
-                                                            flydf, dotdf,
-                                                            ori_var='ori')
-    dotdf['dist_to_other'] = IFD[:cop_ix]
-    dotdf['facing_angle'], dotdf['ang_between'] = get_relative_orientations(dotdf, flydf,
-                                                                            ori_var='ori')
+    IFD = np.sqrt(np.sum(np.square(dot_ctr - fly_ctr), axis=1))
+    flydf["dist_to_other"] = IFD[:cop_ix]
+    flydf["facing_angle"], flydf["ang_between"] = get_relative_orientations(
+        flydf, dotdf, ori_var="ori"
+    )
+    dotdf["dist_to_other"] = IFD[:cop_ix]
+    dotdf["facing_angle"], dotdf["ang_between"] = get_relative_orientations(
+        dotdf, flydf, ori_var="ori"
+    )
     return flydf, dotdf
 
 
@@ -337,7 +371,6 @@ def load_dlc_df(
 
     # Combine
     df = pd.concat([flydf, dotdf], axis=0)
-
 
     df["acquisition"] = acq
     if "ele" in acq:
@@ -484,4 +517,3 @@ def convert_dlc_to_flytracker(df, mm_per_pix=None):
         }
     )
     return df
-
