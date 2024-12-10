@@ -11,7 +11,6 @@ Last Modified  :
 import os
 import numpy as np
 import pandas as pd
-import scipy.stats as spstats
 import matplotlib as mpl
 import pylab as pl
 import seaborn as sns
@@ -20,8 +19,7 @@ import utils as util
 import transform_data.relative_metrics as rem
 import cv2
 
-from shapely.geometry import Point, MultiPoint
-#from shapely.geometry.polygon import Polygon
+from shapely.geometry import MultiPoint
 import scipy.signal as signal
 
 # ---------------------------------------------------------------------
@@ -89,47 +87,6 @@ def convert_df_units(flydf, mm_per_pix, win=1):
     # flydf['dist_to_other_mm'] = IFD_mm[:cop_ix]
 
     return flydf
- 
-def get_fly_params(flypos, cop_ix=None, win=5, fps=60):
-    '''
-    Convert tracked DLC coords to flytracker params.
-    TODO: change 'heading' to 'ori'
-
-    Arguments:
-        flypos -- _description
-_
-
-    Keyword Arguments:
-        cop_ix -- _description_ (default: {None})
-        win -- _description_ (default: {5})
-        fps -- _description_ (default: {60})
-
-    Returns:
-        _description_
-    '''
-    if cop_ix is None:
-        cop_ix = len(flypos)
-    flypos = flypos.iloc[:cop_ix]
-
-    fly_ctr = get_animal_centroid(flypos)
-    # get some more female parameters
-    flydf = pd.DataFrame(get_bodypart_angle(flypos, 'abdomentip', 'head'),
-                                columns=['ori'])
-    flydf['centroid_x'] = fly_ctr[:cop_ix, 0]
-    flydf['centroid_y'] = fly_ctr[:cop_ix, 1]
-    flydf['lin_speed'] = np.concatenate(
-                            (np.zeros(1), 
-                            np.sqrt(np.sum(np.square(np.diff(fly_ctr[:cop_ix, ], axis=0)), 
-                            axis=1)))) / (win/fps)
-    leftw = get_bodypart_angle(flypos, 'thorax', 'wingL')
-    rightw = get_bodypart_angle(flypos, 'thorax', 'wingR')
-    flydf['left_wing_angle'] = wrap2pi(circular_distance(flydf['ori'].interpolate(), leftw)) - np.pi
-    flydf['right_wing_angle'] = wrap2pi(circular_distance(flydf['ori'].interpolate(), rightw)) - np.pi
-    flydf['inter_wing_dist'] = get_bodypart_distance(flypos, 'wingR', 'wingL')
-    flydf['body_length'] = get_bodypart_distance(flypos, 'head', 'abdomentip')
-    flydf['frame'] = np.arange(len(flydf))
-
-    return flydf
 
 def get_dot_params(dotpos, cop_ix=None):
     if cop_ix is None:
@@ -155,75 +112,7 @@ def get_dot_params(dotpos, cop_ix=None):
     return dotdf
 
 
-def get_interfly_params(flydf, dotdf, cop_ix=None):
-    if cop_ix is None:
-        cop_ix = len(flydf)   
-    # inter-fly stuff
-    # get inter-fly distance based on centroid
-    fly_ctr = flydf[['centroid_x', 'centroid_y']].values 
-    dot_ctr = dotdf[['centroid_x', 'centroid_y']].values 
-
-    IFD = np.sqrt(np.sum(np.square(dot_ctr - fly_ctr),axis=1))
-    flydf['dist_to_other'] = IFD[:cop_ix]
-    flydf['facing_angle'], flydf['ang_between'] = get_relative_orientations(
-                                                            flydf, dotdf,
-                                                            ori_var='ori')
-    dotdf['dist_to_other'] = IFD[:cop_ix]
-    dotdf['facing_angle'], dotdf['ang_between'] = get_relative_orientations(dotdf, flydf,
-                                                                            ori_var='ori')
-    return flydf, dotdf
-
-
-def load_trk_df(fpath, flyid='fly', fps=60, max_jump=6, 
-                cop_ix=None, filter_bad_frames=True, pcutoff=0.9):
-    
-    trk = pd.read_hdf(fpath)
-
-
-    #bad_ixs = df[df[df.columns[df.columns.get_level_values(3)=='likelihood']] < 0.99].any(axis=1)
-    #bad_ixs = df[df[df[df.columns[df.columns.get_level_values(3)=='likelihood']] < 0.9].any(axis=1)].index.tolist()            
-
-    tstamp = np.linspace(0, len(trk) * 1 / fps, len(trk))
-    flypos = trk.xs(flyid, level='individuals', axis=1)
-    flypos = remove_jumps(flypos, max_jump)
-
-    if filter_bad_frames:
-        if flyid == 'fly':
-            bad_ixs = flypos[ flypos[ flypos[flypos.columns[flypos.columns.get_level_values(2)=='likelihood']] < pcutoff].any(axis=1)].index.tolist()
-        else:
-            bad_ixs = []
-        flypos.loc[bad_ixs, :] = np.nan
-
-    if cop_ix is None:
-        cop_ix = len(flypos)
-    if 'fly' in flyid:
-        flydf = get_fly_params(flypos, cop_ix=cop_ix)
-    else:
-        flydf = get_dot_params(flypos, cop_ix=cop_ix)
-    flydf['time'] = tstamp
-    
-    return flydf
-
-# ---------------------------------------------------------------------
-# measurement
-# ---------------------------------------------------------------------
-
-
-def get_relative_orientations(ani1, ani2, ori_var='heading', xvar='centroid_x', yvar='centroid_y'):
-
-    '''
-    returns facing_angle and angle_between -- facing_angle is relative to ani1
-
-    Returns:
-        _description_
-    '''
-    normPos = ani2[[xvar, yvar]] - ani1[[xvar, yvar]]
-    absoluteAngle = np.arctan2(normPos[yvar], normPos[xvar])
-    fA = circular_distance(absoluteAngle, ani1[ori_var])
-    aBetween = circular_distance(ani1[ori_var], ani2[ori_var])
-
-    return fA, aBetween
-
+# load_trk_df = ProjectDLC.complete_load
 
 
 # ---------------------------------------------------------------------
@@ -234,71 +123,6 @@ def get_valid_coords(df, pcutoff=0.9):
     xyp = df.values.reshape((n_frames, -1, 3))
     xyp[xyp[:, :, 2] < pcutoff] = np.nan
     return xyp[:, :, :2]
-
-
-def remove_jumps(dataframe, maxJumpLength):
-    # removes large jumps in the x/y position of bodyparts, usually resulting from swaps between animals
-
-    # get all column names
-    scorer = dataframe.columns.get_level_values(0)[0]
-    bps = list(dataframe.columns.get_level_values(1).unique()) #list(dataframe.columns.levels[1])
-    params = list(dataframe.columns.levels[2])
-    dataframeMod = dataframe.copy()
-
-    for i, partName in enumerate(bps):
-
-        xDiff = pd.Series(np.diff(dataframe[scorer][partName]['x']))
-        yDiff = pd.Series(np.diff(dataframe[scorer][partName]['y']))
-
-        xJumpsPositive = signal.find_peaks(xDiff.interpolate(), threshold=200)
-        xJumpsNegative = signal.find_peaks(xDiff.interpolate() * -1, threshold=200)
-        yJumpsPositive = signal.find_peaks(yDiff.interpolate(), threshold=200)
-        yJumpsNegative = signal.find_peaks(yDiff.interpolate() * -1, threshold=200)
-
-        toKill = np.zeros((len(yDiff),), dtype=bool)
-
-        for j in range(len(xJumpsPositive[0])):
-            if np.any((xJumpsNegative[0] > xJumpsPositive[0][j]) & (
-                    xJumpsNegative[0] < xJumpsPositive[0][j] + maxJumpLength)):
-                endIdx = np.where((xJumpsNegative[0] > xJumpsPositive[0][j]) & (
-                        xJumpsNegative[0] < xJumpsPositive[0][j] + maxJumpLength))
-                toKill[xJumpsPositive[0][j]:xJumpsNegative[0][endIdx[0][0]]] = True
-            else:
-                toKill[xJumpsPositive[0][j]] = True
-
-        for j in range(len(xJumpsNegative[0])):
-
-            if np.any((xJumpsPositive[0] > xJumpsNegative[0][j]) & (
-                    xJumpsPositive[0] < xJumpsNegative[0][j] + maxJumpLength)):
-                endIdx = np.where((xJumpsPositive[0] > xJumpsNegative[0][j]) & (
-                        xJumpsPositive[0] < xJumpsNegative[0][j] + maxJumpLength))
-                toKill[xJumpsNegative[0][j]:xJumpsPositive[0][endIdx[0][0]]] = True
-            else:
-                toKill[xJumpsNegative[0][j]] = True
-
-        for j in range(len(yJumpsPositive[0])):
-            if np.any((yJumpsNegative[0] > yJumpsPositive[0][j]) & (
-                    yJumpsNegative[0] < yJumpsPositive[0][j] + maxJumpLength)):
-                endIdx = np.where((yJumpsNegative[0] > yJumpsPositive[0][j]) & (
-                        yJumpsNegative[0] < yJumpsPositive[0][j] + maxJumpLength))
-                toKill[yJumpsPositive[0][j]:yJumpsNegative[0][endIdx[0][0]]] = True
-            else:
-                toKill[yJumpsPositive[0][j]] = True
-
-        for j in range(len(yJumpsNegative[0])):
-            if np.any((yJumpsPositive[0] > yJumpsNegative[0][j]) & (
-                    yJumpsPositive[0] < yJumpsNegative[0][j] + maxJumpLength)):
-                endIdx = np.where((yJumpsPositive[0] > yJumpsNegative[0][j]) & (
-                        yJumpsPositive[0] < yJumpsNegative[0][j] + maxJumpLength))
-                toKill[yJumpsNegative[0][j]:yJumpsPositive[0][endIdx[0][0]]] = True
-            else:
-                toKill[yJumpsNegative[0][j]] = True
-
-        toKill = np.insert(toKill, 1, False)
-
-        dataframeMod.loc[toKill, (scorer, partName, params)] = np.nan
-
-    return dataframeMod
 
 # GET EPOCHS:
 def split_speed_epochs(dotdf, return_stepdict=True, 
@@ -325,24 +149,6 @@ def split_speed_epochs(dotdf, return_stepdict=True,
     else:
         return dotdf
 
-
-def smooth_speed_steps(dotdf, win=13, cop_ix=None):
-    if cop_ix is None:
-        cop_ix = len(dotdf)
-    smoothed_x = lpfilter(dotdf['centroid_x'], win)
-    smoothed_y = lpfilter(dotdf['centroid_y'], win)
-
-    dot_ctr_sm = np.dstack([smoothed_x, smoothed_y]).squeeze()
-    # dotdf['lin_speed_filt'] = smoothed_speed
-    dotdf['lin_speed_filt'] = np.concatenate(
-                            (np.zeros(1), 
-                            np.sqrt(np.sum(np.square(np.diff(dot_ctr_sm[:cop_ix, ], axis=0)), 
-                            axis=1)))).round(2)
-    dotdf['centroid_x_filt'] = smoothed_x
-    dotdf['centroid_y_filt'] = smoothed_y
-
-    return dotdf
-
 def get_step_shift_index(dary, find_stepup=True, plot=False):
     '''
     get index of shift in a noisy step function
@@ -364,79 +170,6 @@ def get_step_shift_index(dary, find_stepup=True, plot=False):
         pl.plot((step_indx, step_indx), (dary_step[step_indx]/100, 0), 'r')
     return step_indx
 
-# get chunks
-
-def get_step_indices(dotdf, speed_var='lin_speed_filt', t_start=20, 
-                     increment=40, n_levels=10):
-    '''
-    Fix DLC tracked dot trajectories with diffspeeds2.csv
-    Smooths dot positions, finds indices of steps in velocity. Use these indices to divide trajectories into epochs.
-    '''
-    # speed_var = 'lin_speed_filt'
-    # t_start = 20
-    # n_epochs = 9
-    if speed_var not in dotdf.columns:
-        dotdf = smooth_speed_steps(dotdf)
-
-    tmpdf = dotdf.copy() #loc[motion_start_ix:].copy()
-    step_dict={}
-    for i in range(n_levels):
-        t_stop = t_start + increment
-        curr_chunk = tmpdf[ (tmpdf['time']>=t_start) & (tmpdf['time']<=t_stop)].copy().interpolate()
-        #if i==(n_levels-1):
-        find_stepup = i < (n_levels-1)
-        # check in case speed does not actually drop at end:
-        if i==(n_levels-1) and tmpdf.iloc[-20:][speed_var].mean()<5:
-            find_stepup = False
-        else:
-            find_stepup = True
-        tmp_step_ix = get_step_shift_index(np.array(curr_chunk[speed_var].values),
-                                          find_stepup=find_stepup)
-        step_ix = curr_chunk.iloc[tmp_step_ix].name
-        step_dict.update({i: step_ix})
-        t_start = t_stop 
-    return step_dict
-
-def add_speed_epoch(dotdf, step_dict):
-    '''
-    Use step indices found with get_step_indices() to split speed-varying trajectory df into epochs
-    '''
-    last_ix = step_dict[0]
-    dotdf.loc[:last_ix, 'epoch'] = 0
-    step_dict_values = list(step_dict.values())
-    for i, v in enumerate(step_dict_values):
-        if v == step_dict_values[-1]:
-            dotdf.loc[last_ix:, 'epoch'] = i+1
-            #flydf.loc[last_ix:, 'epoch'] = i+1
-        else:
-            next_ix = step_dict_values[i+1]
-            dotdf.loc[last_ix:next_ix, 'epoch'] = i+1
-            #flydf.loc[last_ix:next_ix, 'epoch'] = i+1
-        last_ix = next_ix
-    return dotdf
-
-def add_speed_epochs(dotdf, flydf, acq, filter=True):
-    dotdf = smooth_speed_steps(dotdf)
-    # get epochs
-    if acq in '20240214-1045_f1_Dele-wt_5do_sh_prj10_sz12x12_2024-02-14-104540-0000':
-        n_levels = 8
-    elif acq in '20240215-1722_fly1_Dmel_sP1-ChR_3do_sh_6x6_2024-02-15-172443-0000':
-        n_levels = 9
-    else:
-        n_levels = 10
-    step_dict = get_step_indices(dotdf, speed_var='lin_speed_filt', 
-                                t_start=20, increment=40, n_levels=n_levels)
-
-    dotdf = add_speed_epoch(dotdf, step_dict)
-    flydf = add_speed_epoch(flydf, step_dict)
-    dotdf['acquisition'] = acq
-    flydf['acquisition'] = acq
-    if filter:
-        return dotdf[dotdf['epoch'] < 10], flydf[flydf['epoch'] < 10]
-    else:
-        return dotdf, flydf
-#
-
 def check_speed_steps(dotdf, step_dict):
     '''
     Check speed steps and found indices
@@ -452,67 +185,6 @@ def check_speed_steps(dotdf, step_dict):
 # ---------------------------------------------------------------------
 # Data loading and formatting
 # ---------------------------------------------------------------------
-
-def load_dlc_df(fpath, fly1='fly', fly2='single', fps=60, max_jump=6, pcutoff=0.8,
-                diff_speeds=True):
-    '''
-    From a DLC .h5 file, load fly and dot dataframes, and calculate interfly params.
-
-    Arguments:
-        fpath -- _description_
-
-    Keyword Arguments:
-        fly1 -- _description_ (default: {'fly'})
-        fly2 -- _description_ (default: {'single'})
-        fps -- _description_ (default: {60})
-        max_jump -- max nframes jump allowed (default: {6})
-        pcutoff -- _description_ (default: {0.8})
-        diff_speeds -- diff_speeds2 protocol, where dot increasing speed (default: {True})
-
-    Returns:
-        flydf, dotdf
-    '''
-    # get dataframes
-    flydf = load_trk_df(fpath, flyid=fly1, fps=fps, 
-                            max_jump=max_jump, cop_ix=None,
-                            filter_bad_frames=True, pcutoff=pcutoff)
-    dotdf = load_trk_df(fpath, flyid=fly2, fps=fps, 
-                            max_jump=max_jump, cop_ix=None, 
-                            filter_bad_frames=True, pcutoff=pcutoff)
-    print(flydf.shape, dotdf.shape)
-    # set nans
-    nan_rows = flydf.isna().any(axis=1)
-    dotdf.loc[nan_rows] = np.nan
-
-    # add ID vars
-    flydf['id'] = 0
-    dotdf['id'] = 1
-    trk_ = pd.concat([flydf, dotdf], axis=0)
-
-    # Get metrics between the two objects
-    flydf, dotdf = get_interfly_params(flydf, dotdf, cop_ix=None)
-
-    # Add speed epoch if this is a diffspeeds2 protocol
-    if diff_speeds:
-        acq = get_acq_from_dlc_fpath(fpath)
-        dotdf, flydf = add_speed_epochs(dotdf, flydf, acq, filter=False)
-
-    # Combine
-    df = pd.concat([flydf, dotdf], axis=0)
-
-    # Add some meta data
-    acq = get_acq_from_dlc_fpath(fpath) #'_'.join(os.path.split(fpath.split('DLC')[0])[-1].split('_')[0:-1])
-    #print(df_['id'].unique())
-    df['acquisition'] = acq
-    if 'ele' in acq:
-        sp = 'ele'
-    elif 'yak' in acq:
-        sp = 'yak'
-    elif 'mel' in acq:
-        sp = 'mel'
-    df['species'] = sp
-
-    return df #flydf, dotdf
 
 
 def convert_dlc_to_flytracker(df, mm_per_pix=None):

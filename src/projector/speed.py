@@ -89,16 +89,20 @@ class Speed:
     def smooth_speed_steps(dotdf, win=13, cop_ix=None):
         if cop_ix is None:
             cop_ix = len(dotdf)
-        smoothed_x = lpfilter(dotdf['centroid_x'], win)
-        smoothed_y = lpfilter(dotdf['centroid_y'], win)
+        smoothed_x = lpfilter(dotdf["centroid_x"], win)
+        smoothed_y = lpfilter(dotdf["centroid_y"], win)
 
         dot_ctr_sm = np.dstack([smoothed_x, smoothed_y]).squeeze()
         # dotdf['lin_speed_filt'] = smoothed_speed
-        dotdf['lin_speed_filt'] = np.concatenate(
-                                (np.zeros(1), 
-                                np.sqrt(np.sum(np.square(np.diff(dot_ctr_sm[:cop_ix, ], axis=0)), 
-                                axis=1)))).round(2)
-        dotdf['centroid_x_filt'] = smoothed_x
-        dotdf['centroid_y_filt'] = smoothed_y
+        dotdf["lin_speed_filt"] = np.concatenate(
+            (
+                np.zeros(1),
+                np.sqrt(
+                    np.sum(np.square(np.diff(dot_ctr_sm[:cop_ix,], axis=0)), axis=1)
+                ),
+            )
+        ).round(2)
+        dotdf["centroid_x_filt"] = smoothed_x
+        dotdf["centroid_y_filt"] = smoothed_y
 
         return dotdf

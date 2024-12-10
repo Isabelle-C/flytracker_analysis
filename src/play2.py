@@ -4,7 +4,8 @@ import pandas as pd
 
 from src.project_dlc import ProjectDLC
 from src.dlc.measurement import Measurement
-
+from src.coordinate_transform import CoordinateTransform
+from src.video import VideoInfo
 
 def get_metrics_relative_to_focal_fly(
     acqdir,
@@ -104,15 +105,11 @@ def get_target_sizes_df(fly1, fly2, xvar="pos_x", yvar="pos_y"):
 
 
 def do_transformations_on_df(
-    trk_, frame_width, frame_height, feat_=None, cop_ix=None, flyid1=0, flyid2=1
+    trk_, video: VideoInfo, feat_=None, flyid1=0, flyid2=1
 ):
-    if feat_ is None:
-        assert (
-            "dist_to_other" in trk_.columns
-        ), "No feat df provided. Need dist_to_other."
 
     # center x- and y-coordinates
-    trk_ = util.center_coordinates(trk_, frame_width, frame_height)
+    trk_ = CoordinateTransform.center_coordinate_system(trk_, video.frame_width, video.frame_height)
 
     # separate fly1 and fly2
     fly1 = trk_[trk_["id"] == flyid1].copy().reset_index(drop=True)
@@ -129,7 +126,7 @@ def do_transformations_on_df(
 
     # add polar conversion
     # FLIP y-axis? TODO check this
-    polarcoords = cart2pol(fly2["rot_x"], fly2["rot_y"])
+    polarcoords = Measurement.cart2pol(fly2["rot_x"], fly2["rot_y"])
     fly1["targ_pos_radius"] = polarcoords[0]
     fly1["targ_pos_theta"] = polarcoords[1]
     fly1["targ_rel_pos_x"] = fly2["rot_x"]
@@ -146,7 +143,7 @@ def do_transformations_on_df(
 
     # add polar conversion
     # FLIP y-axis? TODO check this
-    polarcoords = util.cart2pol(fly1["rot_x"], fly1["rot_y"])
+    polarcoords = Measurement.cart2pol(fly1["rot_x"], fly1["rot_y"])
     fly2["targ_pos_radius"] = polarcoords[0]
     fly2["targ_pos_theta"] = polarcoords[1]
     fly2["targ_rel_pos_x"] = fly1["rot_x"]
@@ -205,9 +202,9 @@ def do_transformations_on_df(
 
     return df
 
+
 def load_and_transform_dlc(
     df,
-    
     heading_var="ori",
     winsize=10,
 ):

@@ -134,7 +134,6 @@ class ProjectDLC:
         flypos = ProjectDLC.filter_based_on_likelihood(flypos, pcutoff)
         flydf = ProjectDLC.get_fly_params(flypos)
 
-        
         flydf["time"] = video.get_timestamp()
 
         return flydf
@@ -148,7 +147,9 @@ class ProjectDLC:
         df_fly2["id"] = 1
 
         # Get metrics between the two objects
-        df_fly1, df_fly2 = Measurement.get_interfly_params(df_fly1, df_fly2, "fly1", "fly2")
+        df_fly1, df_fly2 = Measurement.get_interfly_params(
+            df_fly1, df_fly2, "fly1", "fly2"
+        )
 
         df = pd.concat([df_fly1, df_fly2], axis=0)
         df["species"] = species_name
