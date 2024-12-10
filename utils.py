@@ -1107,6 +1107,7 @@ def load_mat(mat_fpaths): #results_dir):
             struct_name = [k for k in mat.keys() if not k.startswith('__')]
             # is already dict
             ndata = mat[struct_name[0]] 
+            # rename columns
             columns = [n.replace(' ', '_') for n in ndata['names']]
 
         n_flies, n_frames, n_flags = ndata['data'].shape
