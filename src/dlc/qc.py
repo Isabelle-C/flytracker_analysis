@@ -4,7 +4,7 @@ import scipy.signal as signal
 
 
 class QualityControl:
-
+    @staticmethod
     def remove_jumps(dataframe, maxJumpLength):
         """
         Remove large jumps in the x/y position of bodyparts, usually resulting from swaps between animals.

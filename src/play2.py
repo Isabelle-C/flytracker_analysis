@@ -1,7 +1,9 @@
 import os
 import numpy as np
+import pandas as pd
 
-from calculate_dlc import *
+from src.project_dlc import ProjectDLC
+from src.dlc.measurement import Measurement
 
 
 def get_metrics_relative_to_focal_fly(
@@ -203,211 +205,12 @@ def do_transformations_on_df(
 
     return df
 
-
-def get_interfly_params(flydf, dotdf, cop_ix=None):
-    if cop_ix is None:
-        cop_ix = len(flydf)
-    # inter-fly stuff
-    # get inter-fly distance based on centroid
-    fly_ctr = flydf[["centroid_x", "centroid_y"]].values
-    dot_ctr = dotdf[["centroid_x", "centroid_y"]].values
-
-    IFD = np.sqrt(np.sum(np.square(dot_ctr - fly_ctr), axis=1))
-    flydf["dist_to_other"] = IFD[:cop_ix]
-    flydf["facing_angle"], flydf["ang_between"] = get_relative_orientations(
-        flydf, dotdf, ori_var="ori"
-    )
-    dotdf["dist_to_other"] = IFD[:cop_ix]
-    dotdf["facing_angle"], dotdf["ang_between"] = get_relative_orientations(
-        dotdf, flydf, ori_var="ori"
-    )
-    return flydf, dotdf
-
-
-def load_trk_df(
-    fpath,
-    flyid="fly",
-    fps=60,
-    max_jump=6,
-    cop_ix=None,
-    filter_bad_frames=True,
-    pcutoff=0.9,
-):
-
-    trk = pd.read_hdf(fpath)
-
-    # bad_ixs = df[df[df.columns[df.columns.get_level_values(3)=='likelihood']] < 0.99].any(axis=1)
-    # bad_ixs = df[df[df[df.columns[df.columns.get_level_values(3)=='likelihood']] < 0.9].any(axis=1)].index.tolist()
-
-    tstamp = np.linspace(0, len(trk) * 1 / fps, len(trk))
-    flypos = trk.xs(flyid, level="individuals", axis=1)
-    flypos = remove_jumps(flypos, max_jump)
-
-    if filter_bad_frames:
-        if flyid == "fly":
-            bad_ixs = flypos[
-                flypos[
-                    flypos[
-                        flypos.columns[
-                            flypos.columns.get_level_values(2) == "likelihood"
-                        ]
-                    ]
-                    < pcutoff
-                ].any(axis=1)
-            ].index.tolist()
-        else:
-            bad_ixs = []
-        flypos.loc[bad_ixs, :] = np.nan
-
-    if cop_ix is None:
-        cop_ix = len(flypos)
-    if "fly" in flyid:
-        flydf = get_fly_params(flypos, cop_ix=cop_ix)
-    else:
-        flydf = get_dot_params(flypos, cop_ix=cop_ix)
-    flydf["time"] = tstamp
-
-    return flydf
-
-
-def add_speed_epochs(dotdf, flydf, acq, filter=True):
-    dotdf = smooth_speed_steps(dotdf)
-    # get epochs
-    if acq in "20240214-1045_f1_Dele-wt_5do_sh_prj10_sz12x12_2024-02-14-104540-0000":
-        n_levels = 8
-    elif acq in "20240215-1722_fly1_Dmel_sP1-ChR_3do_sh_6x6_2024-02-15-172443-0000":
-        n_levels = 9
-    else:
-        n_levels = 10
-    step_dict = get_step_indices(
-        dotdf, speed_var="lin_speed_filt", t_start=20, increment=40, n_levels=n_levels
-    )
-
-    dotdf = add_speed_epoch(dotdf, step_dict)
-    flydf = add_speed_epoch(flydf, step_dict)
-    dotdf["acquisition"] = acq
-    flydf["acquisition"] = acq
-    if filter:
-        return dotdf[dotdf["epoch"] < 10], flydf[flydf["epoch"] < 10]
-    else:
-        return dotdf, flydf
-
-
-def get_interfly_params(flydf, dotdf, cop_ix=None):
-    if cop_ix is None:
-        cop_ix = len(flydf)
-    # inter-fly stuff
-    # get inter-fly distance based on centroid
-    fly_ctr = flydf[["centroid_x", "centroid_y"]].values
-    dot_ctr = dotdf[["centroid_x", "centroid_y"]].values
-
-    IFD = np.sqrt(np.sum(np.square(dot_ctr - fly_ctr), axis=1))
-    flydf["dist_to_other"] = IFD[:cop_ix]
-    flydf["facing_angle"], flydf["ang_between"] = get_relative_orientations(
-        flydf, dotdf, ori_var="ori"
-    )
-    dotdf["dist_to_other"] = IFD[:cop_ix]
-    dotdf["facing_angle"], dotdf["ang_between"] = get_relative_orientations(
-        dotdf, flydf, ori_var="ori"
-    )
-    return flydf, dotdf
-
-
-def load_dlc_df(
-    fpath, fly1="fly", fly2="single", fps=60, max_jump=6, pcutoff=0.8, diff_speeds=True
-):
-    """
-    From a DLC .h5 file, load fly and dot dataframes, and calculate interfly params.
-
-    Arguments:
-        fpath -- _description_
-
-    Keyword Arguments:
-        fly1 -- _description_ (default: {'fly'})
-        fly2 -- _description_ (default: {'single'})
-        fps -- _description_ (default: {60})
-        max_jump -- max nframes jump allowed (default: {6})
-        pcutoff -- _description_ (default: {0.8})
-        diff_speeds -- diff_speeds2 protocol, where dot increasing speed (default: {True})
-
-    Returns:
-        flydf, dotdf
-    """
-    # get dataframes
-    flydf = load_trk_df(
-        fpath,
-        flyid=fly1,
-        fps=fps,
-        max_jump=max_jump,
-        cop_ix=None,
-        filter_bad_frames=True,
-        pcutoff=pcutoff,
-    )
-    dotdf = load_trk_df(
-        fpath,
-        flyid=fly2,
-        fps=fps,
-        max_jump=max_jump,
-        cop_ix=None,
-        filter_bad_frames=True,
-        pcutoff=pcutoff,
-    )
-    print(flydf.shape, dotdf.shape)
-    # set nans
-    nan_rows = flydf.isna().any(axis=1)
-    dotdf.loc[nan_rows] = np.nan
-
-    # add ID vars
-    flydf["id"] = 0
-    dotdf["id"] = 1
-    trk_ = pd.concat([flydf, dotdf], axis=0)
-
-    # Get metrics between the two objects
-    flydf, dotdf = get_interfly_params(flydf, dotdf, cop_ix=None)
-
-    # Add speed epoch if this is a diffspeeds2 protocol
-    if diff_speeds:
-        dotdf, flydf = add_speed_epochs(dotdf, flydf, acq, filter=False)
-
-    # Combine
-    df = pd.concat([flydf, dotdf], axis=0)
-
-    df["acquisition"] = acq
-    if "ele" in acq:
-        sp = "ele"
-    elif "yak" in acq:
-        sp = "yak"
-    elif "mel" in acq:
-        sp = "mel"
-    df["species"] = sp
-
-    return df  # flydf, dotdf
-
-
 def load_and_transform_dlc(
-    fpath,  # localroot='/Users/julianarhee/DeepLabCut',
-    video_fpath=None,
-    projectname="projector-1dot-jyr-2024-02-18",
-    assay="2d-projector",
+    df,
+    
     heading_var="ori",
-    flyid="fly",
-    dotid="single",
-    fps=60,
-    max_jump=6,
-    pcutoff=0.8,
     winsize=10,
 ):
-
-    # load _eh.h5
-    df = load_dlc_df(
-        fpath,
-        fly1=flyid,
-        fly2=dotid,
-        fps=fps,
-        max_jump=max_jump,
-        pcutoff=pcutoff,
-        diff_speeds=True,
-    )
 
     # transform to FlyTracker format
     df_ = convert_dlc_to_flytracker(df)

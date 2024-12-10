@@ -2,6 +2,7 @@ import numpy as np
 
 
 class CoordinateTransform:
+    @staticmethod
     def wrap2pi(ang: np.array) -> np.array:
         """
         Wrap a set of values to fit between zero and 2Pi.
@@ -14,6 +15,7 @@ class CoordinateTransform:
 
         return wrappedAng
 
+    @staticmethod
     def cart2pol(x, y):
         """
         Returns radius * theta in radians
