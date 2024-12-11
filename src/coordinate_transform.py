@@ -43,7 +43,7 @@ class CoordinateTransform:
     ):
         """
         Center the x and y coordinates of a DataFrame by subtracting half the frame width and height from the respective coordinates.
-        
+
         This effectively translates the coordinates so that the center of the frame is at (0, 0).
 
         Parameters

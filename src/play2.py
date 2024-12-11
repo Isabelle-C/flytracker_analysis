@@ -7,6 +7,7 @@ from src.dlc.measurement import Measurement
 from src.coordinate_transform import CoordinateTransform
 from src.video import VideoInfo
 
+
 def get_metrics_relative_to_focal_fly(
     acqdir,
     mov_is_upstream=False,
@@ -104,12 +105,12 @@ def get_target_sizes_df(fly1, fly2, xvar="pos_x", yvar="pos_y"):
     return fly1  # , fly2
 
 
-def do_transformations_on_df(
-    trk_, video: VideoInfo, feat_=None, flyid1=0, flyid2=1
-):
+def do_transformations_on_df(trk_, video: VideoInfo, feat_=None, flyid1=0, flyid2=1):
 
     # center x- and y-coordinates
-    trk_ = CoordinateTransform.center_coordinate_system(trk_, video.frame_width, video.frame_height)
+    trk_ = CoordinateTransform.center_coordinate_system(
+        trk_, video.frame_width, video.frame_height
+    )
 
     # separate fly1 and fly2
     fly1 = trk_[trk_["id"] == flyid1].copy().reset_index(drop=True)

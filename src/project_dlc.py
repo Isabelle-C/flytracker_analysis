@@ -10,6 +10,7 @@ from src.dlc.measurement import Measurement
 from src.dlc.qc import QualityControl
 from src.coordinate_transform import CoordinateTransform
 from src.video import VideoInfo
+from src.calculation.calculation import Calculation
 
 
 class ProjectDLC:
@@ -25,7 +26,9 @@ class ProjectDLC:
     @staticmethod
     def filter_based_on_likelihood(flypos, pcutoff):
         likelihoods = ProjectDLC.get_likelihoods(flypos)
-        cell_indices = [(row, col) for row, col in zip(*np.where(likelihoods < 0.9))]
+        cell_indices = [
+            (row, col) for row, col in zip(*np.where(likelihoods < pcutoff))
+        ]
         for row, col in cell_indices:
             flypos.loc[row, likelihoods.columns[col]] = np.nan
 
@@ -34,7 +37,7 @@ class ProjectDLC:
     @staticmethod
     def aggressive_filter_based_on_likelihood(flypos, pcutoff):
         likelihoods = ProjectDLC.get_likelihoods(flypos)
-        indices = likelihoods[(likelihoods < 0.9).any(axis=1)].index.tolist()
+        indices = likelihoods[(likelihoods < pcutoff).any(axis=1)].index.tolist()
         print(len(indices))
         flypos.loc[indices, :] = np.nan
         return flypos
@@ -94,13 +97,13 @@ class ProjectDLC:
 
         flydf["left_wing_angle"] = (
             CoordinateTransform.wrap2pi(
-                Measurement.circular_distance(flydf["ori"].interpolate(), leftw)
+                Calculation.circular_distance(flydf["ori"].interpolate(), leftw)
             )
             - np.pi
         )
         flydf["right_wing_angle"] = (
             CoordinateTransform.wrap2pi(
-                Measurement.circular_distance(flydf["ori"].interpolate(), rightw)
+                Calculation.circular_distance(flydf["ori"].interpolate(), rightw)
             )
             - np.pi
         )
@@ -138,20 +141,20 @@ class ProjectDLC:
 
         return flydf
 
-    @staticmethod
-    def merge_dfs_and_add_interfly_data(df_fly1, df_fly2, species_name):
-        """
-        Merge two fly dataframes and calculate interfly metrics.
-        """
-        df_fly1["id"] = 0
-        df_fly2["id"] = 1
+    # @staticmethod
+    # def merge_dfs_and_add_interfly_data(df_fly1, df_fly2, species_name):
+    #     """
+    #     Merge two fly dataframes and calculate interfly metrics.
+    #     """
+    #     df_fly1["id"] = 0
+    #     df_fly2["id"] = 1
 
-        # Get metrics between the two objects
-        df_fly1, df_fly2 = Measurement.get_interfly_params(
-            df_fly1, df_fly2, "fly1", "fly2"
-        )
+    #     # Get metrics between the two objects
+    #     df_fly1, df_fly2 = Measurement.get_interfly_params(
+    #         df_fly1, df_fly2, "fly1", "fly2"
+    #     )
 
-        df = pd.concat([df_fly1, df_fly2], axis=0)
-        df["species"] = species_name
+    #     df = pd.concat([df_fly1, df_fly2], axis=0)
+    #     df["species"] = species_name
 
-        return df
+    #     return df
