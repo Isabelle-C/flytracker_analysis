@@ -14,7 +14,7 @@ h5py = "^3.12.1"
 mat73 = "^0.65"
 opencv-python = "^4.10.0.84"
 ipykernel = "^6.29.5"
-black = "^24.10.0"
+black = {extras = ["jupyter"], version = "^24.10.0"}
 tables = "^3.10.1"
 
 

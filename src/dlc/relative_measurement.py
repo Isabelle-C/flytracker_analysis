@@ -31,7 +31,8 @@ class RelativeMeasurement:
 
         interfly_dist = np.sqrt(np.sum(np.square(df2_ctr - df1_ctr), axis=1))
 
-        df1["inter_obj_dist"] = interfly_dist
+        df1["dist_to_other"] = interfly_dist
+        df2["dist_to_other"] = interfly_dist
         df1[f"{df1_name}_facing_angle"], df1[f"{df1_name}_ang_between"] = (
             RelativeMeasurement.get_relative_orientations(df1, df2, ori_var="ori")
         )

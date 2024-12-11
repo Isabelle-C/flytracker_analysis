@@ -141,6 +141,53 @@ class ProjectDLC:
 
         return flydf
 
+    @staticmethod
+    def convert_dlc_to_flytracker(df, mm_per_pix=None, body_length_mm=2):
+        """
+        Convert DLC output to FlyTracker format.
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            DLC output DataFrame.
+        mm_per_pix : float, optional
+            Millimeters per pixel, by default None.
+        body_length_mm : int, optional
+            Body length in mm, by default 2.
+
+        Returns
+        -------
+        pd.DataFrame
+            DataFrame with converted columns.
+        """
+        df = df.rename(columns={"dist_to_other": "dist_to_other_pix"})
+
+        if mm_per_pix is None:
+            arena_size_mm = 38 - body_length_mm * 2
+            max_dist_found = df["dist_to_other_pix"].max()
+            mm_per_pix = arena_size_mm / max_dist_found
+
+        # convert units to mm/s and mm (like FlyTracker)
+        df["vel"] = df["lin_speed"] * mm_per_pix
+        df["dist_to_other"] = df["dist_to_other_pix"] * mm_per_pix
+        df["pos_x_mm"] = df["centroid_x"] * mm_per_pix
+        df["pos_y_mm"] = df["centroid_y"] * mm_per_pix
+
+        df["mm_to_pix"] = mm_per_pix
+
+        # rename columns to get RELATIVE pos info
+        df = df.rename(
+            columns={
+                "centroid_x": "pos_x",
+                "centroid_y": "pos_y",
+                "heading": "ori",
+                "body_length": "major_axis_len",
+                "inter_wing_dist": "minor_axis_len",
+                "time": "sec",
+            }
+        )
+        return df
+
     # @staticmethod
     # def merge_dfs_and_add_interfly_data(df_fly1, df_fly2, species_name):
     #     """
