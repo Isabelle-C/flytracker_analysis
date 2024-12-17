@@ -123,6 +123,7 @@ class ProjectDLC:
         video: VideoInfo,
         pcutoff: Optional[float] = 0.9,
         crop_ix: Optional[int] = None,
+        fly_index: Optional[int] = None,
     ):
         """
         Select and process data for a single fly.
@@ -138,6 +139,9 @@ class ProjectDLC:
         flydf = ProjectDLC.get_fly_params(flypos)
 
         flydf["time"] = video.get_timestamp()
+
+        if fly_index is not None:
+            flydf["id"] = fly_index
 
         return flydf
 

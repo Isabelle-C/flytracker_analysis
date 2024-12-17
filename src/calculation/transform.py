@@ -5,6 +5,7 @@ import pandas as pd
 
 from src.coordinate_transform import CoordinateTransform
 from src.calculation.calculation import Calculation
+from src.video import VideoInfo
 
 
 class Transform:
@@ -108,6 +109,8 @@ class Transform:
         mean_time_diff = df[f"{time_var}_diff"].mean()
         df["rel_vel"] = df[f"{value_var}_diff"] / (window * mean_time_diff)
         df["rel_vel_abs"] = df[f"{value_var}_diff"].abs() / (window * mean_time_diff)
+
+        df.reset_index(drop=True)
 
         return df
 
@@ -258,3 +261,298 @@ class Transform:
         fly1["rot_ori"] = fly1["ori"] + ori  # Should be 0
 
         return fly1, fly2
+
+    @staticmethod
+    def transform_flytracker_feature(
+        tracking_data, feature_data, window, value_var, time_var
+    ) -> pd.DataFrame:
+        """
+        Perform transformations on the tracking data to center and rotate coordinates relative to the focal fly, and calculate additional metrics.
+
+        Parameters
+        ----------
+        tracking_data : pd.DataFrame
+            DataFrame containing tracking data.
+        feature_data : pd.DataFrame
+            DataFrame containing feature data.
+        window : int
+            Window size for calculating the velocity.
+        value_var : str
+            Relative distance variable to calculate position difference.
+        time_var : str
+            Time variable to calculate time difference.
+        """
+        feature_data_processed = (
+            feature_data.groupby("id")
+            .apply(Transform.get_relative_velocity(window, value_var, time_var))
+            .reset_index(drop=True)
+        )
+
+        feat = feature_data_processed
+        df = pd.concat(
+            [
+                tracking_data,
+                feat.drop(
+                    columns=[c for c in feat.columns if c in tracking_data.columns]
+                ),
+            ],
+            axis=1,
+        )
+
+        assert (
+            df.shape[0] == tracking_data.shape[0]
+        ), f"Bad merge: {feat.shape}, {tracking_data.shape}"
+
+    def do_transformations_on_df(
+        tracking_data: pd.DataFrame,
+        video: VideoInfo,
+        window: int,
+        value_var: str,
+        time_var,
+        feat_data: Optional[pd.DataFrame] = None,
+        flyid1=0,
+        flyid2=1,
+    ) -> pd.DataFrame:
+        """
+        Perform transformations on the tracking data to center and rotate coordinates relative to the focal fly, and calculate additional metrics.
+
+        Parameters
+        ----------
+        tracking_data : pd.DataFrame
+            DataFrame containing tracking data.
+        video : VideoInfo
+            VideoInfo object containing video metadata.
+        window : int
+            Window size for calculating the velocity.
+        value_var : str
+            Transform value variable.
+        time_var : str
+            Time variable.
+        feat_data : Optional[pd.DataFrame]
+            DataFrame containing feature data.
+        flyid1 : int
+            ID of the first fly, default is 0.
+        flyid2 : int
+            ID of the second fly, default is 1.
+
+        Returns
+        -------
+        DataFrame
+            Transformed coordinates and additional metrics.
+        """
+
+        tracking_data = CoordinateTransform.center_coordinate_system(
+            tracking_data, video.frame_width, video.frame_height
+        )
+
+        # Separate fly1 and fly2
+        fly1 = (
+            tracking_data[tracking_data["id"] == flyid1].copy().reset_index(drop=True)
+        )
+        fly2 = (
+            tracking_data[tracking_data["id"] == flyid2].copy().reset_index(drop=True)
+        )
+
+        def transform_add_polar_conversion(fly1, fly2):
+            # Transform coordinates for fly1
+            fly1, fly2 = Transform.translate_coordinates_to_focal_fly(fly1, fly2)
+            fly1, fly2 = Transform.rotate_coordinates_to_focal_fly(fly1, fly2)
+
+            # Add polar conversion for fly1
+            # TODO: check if need to flip y-axis
+            polarcoords = CoordinateTransform.cart2pol(fly2["rot_x"], fly2["rot_y"])
+
+            fly1["targ_pos_radius"] = polarcoords[0]
+            fly1["targ_pos_theta"] = polarcoords[1]
+            fly1["targ_rel_pos_x"] = fly2["rot_x"]
+            fly1["targ_rel_pos_y"] = fly2["rot_y"]
+            return fly1, fly2
+
+        fly1, fly2 = transform_add_polar_conversion(fly1, fly2)
+        fly1, fly2 = transform_add_polar_conversion(fly2, fly1)
+
+        # Get sizes and aggregate tracking data
+        fly1 = Transform.get_target_sizes_df(fly1, fly2, xvar="pos_x", yvar="pos_y")
+        fly2 = Transform.get_target_sizes_df(fly2, fly1, xvar="pos_x", yvar="pos_y")
+
+        if feat_data is not None:
+            df = Transform.transform_flytracker_feature(
+                tracking_data, feat_data, window, value_var, time_var
+            )
+            return df
+        else:
+            tracking_data_processed = (
+                tracking_data.groupby("id")
+                .apply(Transform.get_relative_velocity(window, value_var, time_var))
+                .reset_index(drop=True)
+            )
+            return tracking_data_processed
+
+    @staticmethod
+    def smooth_and_calculate_velocity_circvar(
+        df, smooth_var="ori", vel_var="ang_vel", time_var="sec", winsize=3
+    ):
+        """
+        Smooth circular var and then calculate velocity. Takes care of NaNs.
+        Assumes 'id' is in df.
+
+        Arguments:
+            df -- _description_
+
+        Keyword Arguments:
+            smooth_var -- _description_ (default: {'ori'})
+            vel_var -- _description_ (default: {'ang_vel'})
+            time_var -- _description_ (default: {'sec'})
+            winsize -- _description_ (default: {3})
+
+        Returns:
+            _description_
+        """
+        df[vel_var] = np.nan
+        df["{}_smoothed".format(smooth_var)] = np.nan
+        for i, df_ in df.groupby("id"):
+            # unwrap for continuous angles, then interpolate NaNs
+            nans = df_[df_[smooth_var].isna()].index
+            unwrapped = pd.Series(
+                np.unwrap(df_[smooth_var].interpolate().ffill().bfill()),
+                index=df_.index,
+            )  # .interpolate().values))
+            # replace nans
+            # unwrapped.loc[nans] = np.nan
+            # interpolate over nans now that the values are unwrapped
+            oris = unwrapped.interpolate()
+            # revert back to -pi, pi
+            # oris = [util.set_angle_range_to_neg_pos_pi(i) for i in oris]
+            # smooth with rolling()
+            smoothed = Calculation.smooth_orientations_pandas(
+                oris, winsize=winsize
+            )  # smoothed = smooth_orientations(df_['ori'], winsize=3)
+            # unwrap again to take difference between oris -- should look similar to ORIS
+            smoothed_wrap = pd.Series(
+                [Calculation.set_angle_range_to_neg_pos_pi(i) for i in smoothed]
+            )
+            # smoothed_wrap_unwrap = pd.Series(np.unwrap(smoothed_wrap), index=df_.index)
+            # take difference
+            smoothed_diff = smoothed_wrap.diff()
+            smoothed_diff_range = [
+                Calculation.set_angle_range_to_neg_pos_pi(i) for i in smoothed_diff
+            ]
+            # smoothed_diff = np.concatenate([[0], smoothed_diff])
+            ori_diff_range = [
+                Calculation.set_angle_range_to_neg_pos_pi(i) for i in oris.diff()
+            ]
+            # get angular velocity
+            ang_vel_smoothed = smoothed_diff_range / df_[time_var].diff().mean()
+            ang_vel = ori_diff_range / df_[time_var].diff().mean()
+
+            df.loc[df["id"] == i, vel_var] = ang_vel
+            df.loc[df["id"] == i, "{}_diff".format(smooth_var)] = ori_diff_range
+
+            df.loc[df["id"] == i, "{}_smoothed".format(vel_var)] = ang_vel_smoothed
+            df.loc[df["id"] == i, "{}_smoothed".format(smooth_var)] = smoothed_wrap
+            df.loc[df["id"] == i, "{}_smoothed_range".format(smooth_var)] = [
+                Calculation.set_angle_range_to_neg_pos_pi(i) for i in smoothed_wrap
+            ]
+
+        # df.loc[df[df[smooth_var].isna()].index, :] = np.nan
+        bad_ixs = df[df[smooth_var].isna()]["frame"].dropna().index.tolist()
+        cols = [
+            c for c in df.columns if c not in ["frame", "id", "acquisition", "species"]
+        ]
+        df.loc[bad_ixs, cols] = np.nan
+
+        df["{}_abs".format(vel_var)] = np.abs(df[vel_var])
+
+        return df
+
+    @staticmethod
+    def post_transform_smoothing(
+        transformed_df: pd.DataFrame, winsize=3
+    ):  # heading_var='ori'):
+        """
+        Transform variables measured from keypoints to relative positions and angles.
+
+        Returns:
+            _description_
+        """
+
+        transformed_df["ori_deg"] = np.rad2deg(transformed_df["ori"])
+
+        # convert centered cartesian to polar
+        rad, th = CoordinateTransform.cart2pol(
+            transformed_df["ctr_x"].values, transformed_df["ctr_y"].values
+        )
+        transformed_df["pos_radius"] = rad
+        transformed_df["pos_theta"] = th
+
+        # angular velocity
+        transformed_df = Transform.smooth_and_calculate_velocity_circvar(
+            transformed_df,
+            smooth_var="ori",
+            vel_var="ang_vel",
+            time_var="sec",
+            winsize=winsize,
+        )
+
+        transformed_df["ang_vel_deg"] = np.rad2deg(transformed_df["ang_vel"])
+        transformed_df["ang_vel_abs"] = np.abs(transformed_df["ang_vel"])
+
+        # targ_pos_theta
+        transformed_df["targ_pos_theta_abs"] = np.abs(transformed_df["targ_pos_theta"])
+        transformed_df = Transform.smooth_and_calculate_velocity_circvar(
+            transformed_df,
+            smooth_var="targ_pos_theta",
+            vel_var="targ_ang_vel",
+            time_var="sec",
+            winsize=winsize,
+        )
+
+        # % smooth x, y,
+        transformed_df["pos_x_smoothed"] = transformed_df.groupby("id")[
+            "pos_x"
+        ].transform(lambda x: x.rolling(winsize, 1).mean())
+        # sign = -1 if input_is_flytracker else 1
+        sign = 1
+        transformed_df["pos_y_smoothed"] = sign * transformed_df.groupby("id")[
+            "pos_y"
+        ].transform(lambda x: x.rolling(winsize, 1).mean())
+
+        # calculate heading
+        for i, d_ in transformed_df.groupby("id"):
+            transformed_df.loc[transformed_df["id"] == i, "traveling_dir"] = np.arctan2(
+                d_["pos_y_smoothed"].diff(), d_["pos_x_smoothed"].diff()
+            )
+        transformed_df["traveling_dir_deg"] = np.rad2deg(
+            transformed_df["traveling_dir"]
+        )
+        transformed_df = Transform.smooth_and_calculate_velocity_circvar(
+            transformed_df,
+            smooth_var="traveling_dir",
+            vel_var="traveling_dir_dt",
+            time_var="sec",
+            winsize=3,
+        )
+
+        transformed_df["heading_travel_diff"] = (
+            np.abs(
+                np.rad2deg(transformed_df["ori"])
+                - np.rad2deg(transformed_df["traveling_dir"])
+            )
+            % 180
+        )  # % 180 #np.pi
+
+        transformed_df["vel_smoothed"] = transformed_df.groupby("id")["vel"].transform(
+            lambda x: x.rolling(winsize, 1).mean()
+        )
+
+        # calculate theta_error
+        f1 = transformed_df[transformed_df["id"] == 0].copy().reset_index(drop=True)
+        f2 = transformed_df[transformed_df["id"] == 1].copy().reset_index(drop=True)
+
+        f1 = Calculation.calculate_theta_error(f1, f2, xvar="pos_x", yvar="pos_y")
+        f2 = Calculation.calculate_theta_error(f1, f2, xvar="pos_x", yvar="pos_y")
+
+        transformed_df.loc[transformed_df["id"] == 0, "theta_error"] = f1["theta_error"]
+        transformed_df.loc[transformed_df["id"] == 1, "theta_error"] = f2["theta_error"]
+
+        return transformed_df
